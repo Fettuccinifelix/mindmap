@@ -62,7 +62,10 @@ test("spoofed image rejected before provider call", async () => {
   assert.equal(r.status, 400);
 });
 test("missing credentials returns actionable failure", async () => {
-  assert.equal((await post(createApp({ apiKey: "" }))).status, 503);
+  assert.equal(
+    (await post(createApp({ provider: "openai", apiKey: "" }))).status,
+    503,
+  );
 });
 test("malformed model output and outside boxes rejected", async () => {
   for (const value of [
@@ -114,4 +117,83 @@ test("cross origin requests rejected", async () => {
     ).status,
     403,
   );
+});
+
+test("Ollama accepts a photo without an API key and sends native vision request", async () => {
+  let payload;
+  const app = createApp({
+    provider: "ollama",
+    apiKey: "",
+    model: "qwen2.5vl:3b",
+    fetchImpl: async (url, options) => {
+      assert.equal(String(url), "http://127.0.0.1:11434/api/chat");
+      assert.equal(options.method, "POST");
+      assert.ok(options.signal instanceof AbortSignal);
+      payload = JSON.parse(options.body);
+      return new Response(
+        JSON.stringify({ message: { content: JSON.stringify(result) } }),
+        { status: 200 },
+      );
+    },
+  });
+  const r = await post(app);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, result);
+  assert.equal(payload.model, "qwen2.5vl:3b");
+  assert.equal(payload.stream, false);
+  assert.equal(payload.format, "json");
+  assert.ok(Buffer.from(payload.messages[0].images[0], "base64").length > 0);
+  assert.equal(JSON.stringify(payload).includes("api_key"), false);
+  const config = await request(app).get("/api/photo-config");
+  assert.equal(config.body.local, true);
+  assert.equal(config.body.timeoutMs, 180000);
+  assert.equal(config.body.provider, "ollama");
+});
+test("Ollama unavailable, missing model, invalid JSON and invalid boxes are actionable", async () => {
+  for (const [fetchImpl, expected] of [
+    [
+      async () => {
+        throw Error("private network details");
+      },
+      "Make sure Ollama is running",
+    ],
+    [async () => new Response("{}", { status: 404 }), "model is missing"],
+    [async () => new Response("{}", { status: 500 }), "supports images"],
+    [
+      async () => Response.json({ message: { content: "bad json" } }),
+      "invalid JSON",
+    ],
+    [
+      async () =>
+        Response.json({
+          message: {
+            content: JSON.stringify({ notes: [{ ...result.notes[0], x: 2 }] }),
+          },
+        }),
+      "invalid note data",
+    ],
+  ]) {
+    const r = await post(createApp({ provider: "ollama", fetchImpl }));
+    assert.equal(r.status, 502);
+    assert.ok(r.body.error.includes(expected));
+    assert.ok(!r.body.error.includes("private network details"));
+  }
+});
+test("Ollama timeout aborts provider request and remote Ollama privacy is labeled accurately", async () => {
+  let signal;
+  const app = createApp({
+    provider: "ollama",
+    ollamaUrl: "http://192.168.1.10:11434",
+    timeoutMs: 10,
+    fetchImpl: async (_url, options) => {
+      signal = options.signal;
+      return new Promise(() => {});
+    },
+  });
+  assert.equal((await post(app)).status, 504);
+  assert.equal(signal.aborted, true);
+  assert.equal((await request(app).get("/api/photo-config")).body.local, false);
+});
+test("unknown provider is rejected without a model request", async () => {
+  assert.equal((await post(createApp({ provider: "invalid" }))).status, 503);
 });

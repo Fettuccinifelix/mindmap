@@ -260,3 +260,29 @@ test("mobile board layout stays within viewport", async ({ page }) => {
     390,
   );
 });
+test("photo review accurately labels local and cloud processing", async ({
+  page,
+}) => {
+  for (const [provider, local, message] of [
+    ["ollama", true, "Analyzed on your computer with Ollama"],
+    ["openai", false, "Sent to the cloud model only when you click Analyze"],
+  ] as const) {
+    await page.route("**/api/photo-config", (route) =>
+      route.fulfill({
+        json: {
+          provider,
+          local,
+          model: provider === "ollama" ? "qwen2.5vl:3b" : "gpt-4.1-mini",
+          timeoutMs: 180000,
+        },
+      }),
+    );
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Import photo", exact: true })
+      .click();
+    await expect(page.locator(".privacy-note")).toContainText(message);
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.unroute("**/api/photo-config");
+  }
+});

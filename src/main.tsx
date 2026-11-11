@@ -631,6 +631,32 @@ function PhotoImport({
     [error, setError] = useState(""),
     [selected, setSelected] = useState(0),
     [placing, setPlacing] = useState(false);
+  const [config, setConfig] = useState<{
+    provider: string;
+    model: string;
+    local: boolean;
+    timeoutMs: number;
+  } | null>(null);
+  useEffect(() => {
+    let mounted = true;
+    fetch("/api/photo-config")
+      .then((r) => {
+        if (!r.ok) throw Error();
+        return r.json();
+      })
+      .then((c) => {
+        if (mounted) setConfig(c);
+      })
+      .catch(() => {
+        if (mounted)
+          setError(
+            "Unable to read photo-analysis settings. Check that the server is running, then reopen this dialog.",
+          );
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
   const controller = useRef<AbortController | null>(null),
     fileRef = useRef<HTMLInputElement>(null);
   useEffect(
@@ -645,7 +671,10 @@ function PhotoImport({
     setBusy(true);
     setError("");
     controller.current = new AbortController();
-    const timeout = setTimeout(() => controller.current?.abort(), 60000);
+    const timeout = setTimeout(
+      () => controller.current?.abort(),
+      (config?.timeoutMs ?? 180000) + 15000,
+    );
     try {
       const form = new FormData();
       form.append("image", image.blob, "wall.jpg");
@@ -800,8 +829,15 @@ function PhotoImport({
               <div className="privacy-note">
                 <Layers size={16} />
                 <p>
-                  Only sent to the cloud model when you click Analyze. The photo
-                  is never saved to your board or our server.
+                  {config
+                    ? config.provider === "ollama"
+                      ? config.local
+                        ? "Analyzed on your computer with Ollama. No API key or cloud upload. "
+                        : "Sent to your configured Ollama server only when you click Analyze. "
+                      : "Sent to the cloud model only when you click Analyze. "
+                    : "Loading analysis settings. "}
+                  The photo is never saved to your board or the app server.
+                  {config && ` Model: ${config.model}.`}
                 </p>
               </div>
             )}
@@ -893,7 +929,7 @@ function PhotoImport({
             ) : (
               <button
                 className="primary"
-                disabled={!image || busy}
+                disabled={!image || busy || !config}
                 onClick={analyze}
               >
                 {busy ? "Reading your wall…" : "Analyze photo"}{" "}
