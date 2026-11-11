@@ -141,7 +141,17 @@ test("Ollama accepts a photo without an API key and sends native vision request"
   assert.deepEqual(r.body, result);
   assert.equal(payload.model, "qwen2.5vl:3b");
   assert.equal(payload.stream, false);
-  assert.equal(payload.format, "json");
+  assert.equal(payload.format.type, "object");
+  assert.deepEqual(payload.format.properties.notes.items.required, [
+    "text",
+    "color",
+    "x",
+    "y",
+    "width",
+    "height",
+  ]);
+  assert.equal(payload.options.num_ctx, 16384);
+  assert.equal(payload.options.num_predict, 8192);
   assert.ok(Buffer.from(payload.messages[0].images[0], "base64").length > 0);
   assert.equal(JSON.stringify(payload).includes("api_key"), false);
   const config = await request(app).get("/api/photo-config");
@@ -196,4 +206,26 @@ test("Ollama timeout aborts provider request and remote Ollama privacy is labele
 });
 test("unknown provider is rejected without a model request", async () => {
   assert.equal((await post(createApp({ provider: "invalid" }))).status, 503);
+});
+
+test("Ollama length-limited responses never import partial notes", async () => {
+  for (const content of [
+    '{"notes":[{"text":"unfinished',
+    JSON.stringify(result),
+  ]) {
+    const response = await post(
+      createApp({
+        provider: "ollama",
+        fetchImpl: async () =>
+          Response.json({
+            done: true,
+            done_reason: "length",
+            message: { content },
+          }),
+      }),
+    );
+    assert.equal(response.status, 502);
+    assert.match(response.body.error, /output or context limit/);
+    assert.equal(response.body.notes, undefined);
+  }
 });

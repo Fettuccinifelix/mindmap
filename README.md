@@ -58,6 +58,7 @@ If analysis fails:
 
 - Run `curl http://127.0.0.1:11434/api/tags` to check that Ollama is reachable. If not, launch the Ollama desktop app; alternatively run `ollama serve` in a separate terminal. An address-in-use message usually means Ollama is already running.
 - Run `ollama list` and check that the exact configured model name is installed. Use `ollama pull qwen2.5vl:3b` if needed.
+- A response-limit message means Ollama stopped before finishing the JSON. The app explicitly requests a 16K context, an 8K output budget, and schema-constrained JSON; large walls may still need several cropped photos. This context uses more memory than Ollama defaults. No partial notes are imported.
 - A timeout or invalid response can improve with a sharper photo of fewer notes. Local models can miss handwriting or produce inaccurate boxes; the review step remains important.
 - Keep Ollama bound to localhost. The browser talks to Threadboard, which talks to Ollama; no browser CORS changes or public Ollama port are needed.
 

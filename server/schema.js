@@ -16,3 +16,30 @@ export const detectionsSchema = z.object({
     )
     .max(200),
 });
+
+// Generation schema constrains individual fields; cross-field box bounds are
+// still validated by detectionsSchema after generation.
+export const detectionOutputFormat = {
+  type: "object",
+  additionalProperties: false,
+  required: ["notes"],
+  properties: {
+    notes: {
+      type: "array",
+      maxItems: 200,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["text", "color", "x", "y", "width", "height"],
+        properties: {
+          text: { type: "string", maxLength: 10000 },
+          color: { type: "string", enum: colors },
+          x: { type: "number", minimum: 0, maximum: 1 },
+          y: { type: "number", minimum: 0, maximum: 1 },
+          width: { type: "number", exclusiveMinimum: 0, maximum: 1 },
+          height: { type: "number", exclusiveMinimum: 0, maximum: 1 },
+        },
+      },
+    },
+  },
+};
